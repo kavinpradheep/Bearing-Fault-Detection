@@ -6,6 +6,12 @@ import joblib
 import matplotlib.pyplot as plt
 import pandas as pd
 import librosa
+import os
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
+from datetime import datetime
+from io import BytesIO
+import openpyxl
 
 # Page configuration
 st.set_page_config(
@@ -17,11 +23,31 @@ st.set_page_config(
 # Custom CSS for better UI
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 42px;
+    .company-name {
+        font-size: 56px;
         font-weight: bold;
-        color: #1E88E5;
+        text-align: center;
         margin-bottom: 10px;
+        color: #2C3E50;
+        font-family: 'Arial', sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        padding: 20px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    }
+    .separator-line {
+        height: 3px;
+        background: linear-gradient(90deg, #2C3E50, #3498DB, #2C3E50);
+        margin: 10px auto 30px auto;
+        width: 80%;
+        border-radius: 2px;
+    }
+    .main-header {
+        font-size: 38px;
+        font-weight: bold;
+        color: #34495E;
+        margin-bottom: 20px;
+        text-align: center;
     }
     .sub-header {
         font-size: 26px;
@@ -31,11 +57,19 @@ st.markdown("""
         margin-bottom: 15px;
     }
     .info-box {
-        background-color: #000000;
+        background-color: #f8f9fa; /* Light theme default */
+        color: #333; /* Dark text for light background */
         padding: 20px;
         border-radius: 10px;
         border-left: 5px solid #1E88E5;
         margin-bottom: 20px;
+    }
+    /* Dark theme adjustments */
+    @media (prefers-color-scheme: dark) {
+        .info-box {
+            background-color: #2c2f33; /* Dark theme background */
+            color: #e0e0e0; /* Light text for dark background */
+        }
     }
     .feature-card {
         background-color: #f8f9fa;
@@ -54,6 +88,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Add company name and separator line before main header
+st.markdown('<div class="company-name">Sri Madhura Engineering</div>', unsafe_allow_html=True)
+st.markdown('<div class="separator-line"></div>', unsafe_allow_html=True)
+
 # Load both models, scaler, and label encoder
 @st.cache_resource
 def load_artifacts():
@@ -69,6 +107,41 @@ def load_artifacts():
 
 lstm_model, cnn_lstm_model, scaler, label_encoder = load_artifacts()
 models_loaded = lstm_model is not None and cnn_lstm_model is not None
+
+# MongoDB Atlas setup
+@st.cache_resource
+def init_mongodb():
+    try:
+        # MongoDB Atlas connection string
+        connection_string = "mongodb+srv://dinesh:6650@cluster0.slrycce.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+        
+        # For secure credential handling, use Streamlit secrets or environment variables (uncomment as needed):
+        # connection_string = st.secrets["mongodb"]["connection_string"]  # Use with secrets.toml
+        # from dotenv import load_dotenv; load_dotenv(); connection_string = os.getenv("MONGODB_URI")  # Use with .env
+
+        # Initialize MongoDB client
+        client = MongoClient(connection_string, serverSelectionTimeoutMS=5000)
+        
+        # Test the connection
+        client.admin.command('ping')
+        
+        # Access the database
+        db = client["bearing_fault_detection"]
+        
+        #st.success("Successfully connected to MongoDB Atlas!")
+        return db
+    
+    except ConnectionFailure as e:
+        st.error(f"Failed to connect to MongoDB Atlas: {e}")
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while connecting to MongoDB Atlas: {e}")
+        return None
+
+# Initialize MongoDB and create upload directory
+db = init_mongodb()
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Feature extraction function
 def extract_features(data):
@@ -106,6 +179,67 @@ def process_audio(audio_file):
         st.error(f"Error processing audio: {e}")
         return None
 
+# Save prediction to MongoDB
+def save_prediction(file, input_type, prediction_output):
+    try:
+        if db is None:
+            st.error("Database connection not available")
+            return False
+            
+        # Save file with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        original_filename = file.name
+        filename = f"{timestamp}_{original_filename}"
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        
+        try:
+            with open(filepath, 'wb') as f:
+                f.write(file.getbuffer())
+        except IOError as e:
+            st.error(f"❌ Error saving file: {e}")
+            return False
+            
+        # Store metadata in MongoDB
+        document = {
+            "original_filename": original_filename,
+            "saved_filename": filename,
+            "filepath": filepath,
+            "timestamp": datetime.now(),
+            "output": prediction_output,
+            "input_type": input_type,
+        }
+        
+        try:
+            db.uploads.insert_one(document)
+            st.success("✅ Results saved to database successfully!")
+            return True
+        except Exception as e:
+            st.error(f"❌ Error saving to database: {e}")
+            return False
+            
+    except Exception as e:
+        st.error(f"❌ Error saving results: {e}")
+        return False
+
+# Fetch history data from MongoDB
+def fetch_history_data():
+    if db is None:
+        st.error("Database connection not available")
+        return None
+    try:
+        data = list(db.uploads.find({}, {'_id': 0}))
+        return pd.DataFrame(data)
+    except Exception as e:
+        st.error(f"Error fetching history: {e}")
+        return None
+
+# Download data as Excel
+def download_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='History')
+    return output.getvalue()
+
 # UI Components
 st.markdown('<div class="main-header">🔧 Bearing Fault Detection System</div>', unsafe_allow_html=True)
 st.markdown("""
@@ -116,7 +250,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Main content in tabs
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Prediction", "ℹ️ Features Explained", "🧠 Models", "📝 Data Collection"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Prediction", "ℹ️ Features Explained", "🧠 Models", "📝 Data Collection", "📜 History"])
 
 with tab1:
     col1, col2 = st.columns([1, 1])
@@ -162,6 +296,16 @@ with tab1:
                         lstm_label, lstm_features, lstm_probs = predict_fault(data, lstm_model, "LSTM")
                         cnn_lstm_label, cnn_lstm_features, cnn_lstm_probs = predict_fault(data, cnn_lstm_model, "CNN-LSTM")
                         
+                        # Save results to backend
+                        if uploaded_file:
+                            uploaded_file.seek(0)  # Reset file pointer
+                            prediction_output = f"LSTM: {lstm_label}, CNN-LSTM: {cnn_lstm_label}"
+                            save_prediction(
+                                uploaded_file,
+                                input_type,
+                                prediction_output
+                            )
+
                         st.markdown("### 🔍 Diagnosis Results")
                         col_lstm, col_cnn_lstm = st.columns(2)
                         
@@ -456,6 +600,46 @@ with tab4:
     - Angular contact/thrust bearings
     """)
 
+with tab5:
+    st.markdown('<div class="sub-header">Analysis History</div>', unsafe_allow_html=True)
+    
+    # Fetch historical data
+    history_df = fetch_history_data()
+    
+    if history_df is not None and not history_df.empty:
+        # Add download button
+        excel_data = download_excel(history_df)
+        st.download_button(
+            label="📥 Download History as Excel",
+            data=excel_data,
+            file_name="bearing_analysis_history.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        
+        # Display history table with formatting
+        st.markdown("### Previous Analyses")
+        
+        # Format timestamp
+        history_df['timestamp'] = pd.to_datetime(history_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Reorder and rename columns for display
+        display_columns = {
+            'timestamp': 'Date & Time',
+            'input_type': 'Input Type',
+            'original_filename': 'File Name',
+            'output': 'Prediction Results'
+        }
+        
+        display_df = history_df[display_columns.keys()].rename(columns=display_columns)
+        
+        # Display table with custom styling
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("No analysis history available yet.")
 
 # Footer
 st.markdown("---")
