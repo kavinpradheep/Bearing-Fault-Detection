@@ -140,7 +140,7 @@ def init_mongodb():
 
 # Initialize MongoDB and create upload directory
 db = init_mongodb()
-UPLOAD_FOLDER = "uploads"
+UPLOAD_FOLDER = "Uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Feature extraction function
@@ -497,7 +497,7 @@ with tab3:
         """)
     
     with col2:
-        st.image("https://miro.medium.com/max/1400/1*qn9Xl6PsitXUXP3PcY9Jyw.png", caption="LSTM Cell Architecture")
+        st.image("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTTZKof4zZssxZa-zFzTDhlB4e6MXst5mKPiw&s", caption="LSTM Cell Architecture")
         
     st.markdown("""
     ### Training Process
@@ -602,44 +602,62 @@ with tab4:
 
 with tab5:
     st.markdown('<div class="sub-header">Analysis History</div>', unsafe_allow_html=True)
-    
-    # Fetch historical data
-    history_df = fetch_history_data()
-    
-    if history_df is not None and not history_df.empty:
-        # Add download button
-        excel_data = download_excel(history_df)
-        st.download_button(
-            label="📥 Download History as Excel",
-            data=excel_data,
-            file_name="bearing_analysis_history.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        
-        # Display history table with formatting
-        st.markdown("### Previous Analyses")
-        
-        # Format timestamp
-        history_df['timestamp'] = pd.to_datetime(history_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
-        
-        # Reorder and rename columns for display
-        display_columns = {
-            'timestamp': 'Date & Time',
-            'input_type': 'Input Type',
-            'original_filename': 'File Name',
-            'output': 'Prediction Results'
-        }
-        
-        display_df = history_df[display_columns.keys()].rename(columns=display_columns)
-        
-        # Display table with custom styling
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True
-        )
+
+    # Initialize session state for login
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+
+    # Check if user is authenticated
+    if not st.session_state.authenticated:
+        st.markdown("### Please Log In to View History")
+        username = st.text_input("Username", key="username_input")
+        password = st.text_input("Password", type="password", key="password_input")
+
+        if st.button("Login"):
+            if username == "madhura@123" and password == "madhura@123":
+                st.session_state.authenticated = True
+                st.success("✅ Successfully logged in!")
+                st.rerun()  # Refresh to show history
+            else:
+                st.error("❌ Invalid username or password")
     else:
-        st.info("No analysis history available yet.")
+        # Fetch historical data
+        history_df = fetch_history_data()
+
+        if history_df is not None and not history_df.empty:
+            # Add download button
+            excel_data = download_excel(history_df)
+            st.download_button(
+                label="📥 Download History as Excel",
+                data=excel_data,
+                file_name="bearing_analysis_history.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            # Display history table with formatting
+            st.markdown("### Previous Analyses")
+
+            # Format timestamp
+            history_df['timestamp'] = pd.to_datetime(history_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+
+            # Reorder and rename columns for display
+            display_columns = {
+                'timestamp': 'Date & Time',
+                'input_type': 'Input Type',
+                'original_filename': 'File Name',
+                'output': 'Prediction Results'
+            }
+
+            display_df = history_df[display_columns.keys()].rename(columns=display_columns)
+
+            # Display table with custom styling
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No analysis history available yet.")
 
 # Footer
 st.markdown("---")
