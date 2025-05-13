@@ -378,7 +378,6 @@ with tab1:
         - **Inner Race Fault**: Damage or defect on the inner raceway
         - **Outer Race Fault**: Damage or defect on the outer raceway
         - **Ball Fault**: Damage on the rolling elements
-        - **Combination Fault**: Multiple fault types present simultaneously
         
         Differences between LSTM and CNN-LSTM predictions may arise due to model sensitivities. High confidence scores indicate reliable predictions.
         """)
@@ -389,7 +388,6 @@ with tab1:
         - If both models predict 'Normal': Continue regular maintenance
         - If either model detects a fault: Inspect the bearing
         - If both models detect the same fault: Immediate inspection recommended
-        - For 'Combination Fault': Urgent attention required
         
         Always verify results with physical inspection.
         """)
@@ -458,7 +456,6 @@ with tab2:
     - **Inner race faults** typically show high kurtosis and crest factor with periodic impulses
     - **Outer race faults** create distinct impacts at specific frequencies
     - **Ball faults** generate more chaotic patterns with higher frequency components
-    - **Combined faults** show complex mixtures of these characteristics
     """)
 
 with tab3:
